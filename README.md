@@ -11,8 +11,10 @@
 </p>
 
 <p align="center">
-  <code>pi install npm:pi-autoname</code>
+  <code>pi install git:github.com/alexshpunt/pi-autoname@main</code>
 </p>
+
+This is [alexshpunt's fork](https://github.com/alexshpunt/pi-autoname) of [ssdiwu/pi-autoname](https://github.com/ssdiwu/pi-autoname). It generates English names in kebab-case by default, without a maximum name length.
 
 ## ✨ What it does
 
@@ -27,7 +29,7 @@
 ## 🚀 Install
 
 ```bash
-pi install npm:pi-autoname
+pi install git:github.com/alexshpunt/pi-autoname@main
 ```
 
 **Works out of the box.** No configuration needed — uses your current session's model by default.
@@ -40,6 +42,7 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 {
   "enabled": true,
   "model": "",
+  "nameFormat": "kebab-case",
   "fallbackModels": [],
   "cooldownMinutes": 10,
   "debug": false,
@@ -50,6 +53,7 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Set to `false` to disable AI naming |
+| `nameFormat` | string | `kebab-case` | Lowercase words joined with hyphens. Set `plain` for a label with spaces. |
 | `model` | string | _(session model)_ | Primary model (`provider/modelId`). Empty = use session model |
 | `fallbackModels` | string[] | `[]` | Additional models to try if primary fails |
 | `cooldownMinutes` | number | `10` | Minutes between periodic re-names |
@@ -140,9 +144,15 @@ Periodic naming compares recent context with the current title. The model is ask
 
 `pi-autoname` sends a short, recent conversation excerpt to the selected naming model. Before sending, it redacts common secret patterns such as API keys, bearer tokens, AWS access keys, private keys, and `*_TOKEN` / `*_SECRET` / `*_PASSWORD` environment assignments. If the AI call fails and the user text contained a detected secret, the local fallback name is skipped to avoid turning secrets into session names.
 
-## 🌍 Language support
+## Name language and format
 
-Names use the dominant natural language in user messages: the first user message for initial naming, and recent user messages for periodic or manual naming. Assistant responses, paths, URLs, and code snippets do not determine the language. A user message that contains any Han / Kana / Hangul characters is treated as a CJK-language message, so English noise co-injected into the same turn (system warnings, error logs, tool output) cannot outweigh the user's CJK intent; only purely-Latin user messages contribute to the English score. When no natural-language user text is available, pi-autoname optionally uses the active [pi-di18n](https://github.com/ssdiwu/pi-di18n) `/lang` locale; pi-di18n is never required.
+Generated names are always English, even when the conversation is in another language. The default `nameFormat: "kebab-case"` produces names such as `remove-mutation-tool-call-spinners`. Use `"plain"` for names such as `Remove mutation tool call spinners`.
+
+There is no maximum character or word count. Long names are not rejected or cut short. The extension no longer sets a 64-token output cap; the provider's output limits and the existing request timeouts still apply. Names must remain meaningful single-line labels, not explanations or lists.
+
+Automatic naming and `/autoname` use the same formatting rules. Existing names are not rewritten just by loading this fork. `/name` remains a manual override with the cooldown behavior described above.
+
+If the model fails, local text extraction uses the same format. It only accepts English-script text without detected secrets. It cannot translate another language offline, so it leaves the current name alone when no valid fallback is available.
 
 ## 🔗 Related
 

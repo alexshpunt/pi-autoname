@@ -15,11 +15,11 @@
   "author": "ssdiwu",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ssdiwu/pi-autoname.git"
+    "url": "git+https://github.com/alexshpunt/pi-autoname.git"
   },
-  "homepage": "https://github.com/ssdiwu/pi-autoname#readme",
+  "homepage": "https://github.com/alexshpunt/pi-autoname#readme",
   "bugs": {
-    "url": "https://github.com/ssdiwu/pi-autoname/issues"
+    "url": "https://github.com/alexshpunt/pi-autoname/issues"
   },
   "files": [
     "index.ts",

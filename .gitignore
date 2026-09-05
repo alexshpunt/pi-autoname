@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 .diwu/
 .dteam/
+.agents/tmp/

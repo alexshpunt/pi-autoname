@@ -6,9 +6,6 @@
 /** A name this short was likely a failed AI response */
 export const MIN_NAME_LENGTH = 3;
 
-/** Max length for a session name — anything longer is likely a raw sentence */
-export const MAX_NAME_LENGTH = 30;
-
 /** Names matching this pattern are raw-slice fallbacks (bad) */
 export const RAW_SLICE_RE =
   /^(?:我|你|他|她|它|请|帮|能|可|可以|能不能|请帮|感觉|突然|我想|我想知道|有没有|是不是|为什么|怎么|如何|What|Can|Could|Please|Help|I want|I need|Is there|Why|How)/;
@@ -33,80 +30,33 @@ export interface DialoguePart {
   text: string;
 }
 
-export type NamingLanguage = "Chinese" | "English" | "Japanese" | "Korean";
+/** Presentation used for generated session names. */
+export type NameFormat = "kebab-case" | "plain";
 
-function naturalLanguageText(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`]*`/g, " ")
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/(?:^|\s)(?:~\/|\/)[^\s]+/g, " ")
-    .split(/\r?\n/)
-    .filter((line) => !/^\s*(?:const|let|var|function|class|import|export|return)\b|[{};]|=>/.test(line))
-    .join(" ");
+/** Gives the model the same language and format rules used by the output cleaner. */
+export function getNamingInstruction(format: NameFormat): string {
+  return "Write the session name in English, regardless of the conversation language. " +
+    (format === "kebab-case"
+      ? "Use lowercase ASCII words and numbers separated by single hyphens (kebab-case), for example remove-mutation-tool-spinners."
+      : "Use a plain English label with spaces between words.");
 }
 
-function scriptCount(text: string, script: RegExp): number {
-  return (text.match(script) ?? []).length;
-}
-
-/**
- * Determines the language from user-authored natural-language text only.
- * CJK scripts receive extra weight so paths and code identifiers do not
- * outweigh prose in a Chinese, Japanese, or Korean request.
- */
-export function detectDominantUserLanguage(parts: DialoguePart[]): NamingLanguage | undefined {
-  const scores: Record<NamingLanguage, number> = { Chinese: 0, English: 0, Japanese: 0, Korean: 0 };
-  const firstSeen = new Map<NamingLanguage, number>();
-  let seen = 0;
-
-  const addScore = (language: NamingLanguage, score: number) => {
-    if (score <= 0) return;
-    if (!firstSeen.has(language)) firstSeen.set(language, seen);
-    scores[language] += score;
-  };
-
-  for (const part of parts) {
-    if (part.role !== "user") continue;
-    const text = naturalLanguageText(part.text);
-    const han = scriptCount(text, /\p{Script=Han}/gu);
-    const kana = scriptCount(text, /[\u3040-\u30ff\u31f0-\u31ff]/gu);
-    const hangul = scriptCount(text, /\p{Script=Hangul}/gu);
-    const hasCjk = han > 0 || kana > 0 || hangul > 0;
-    addScore(kana > 0 ? "Japanese" : "Chinese", (kana > 0 ? kana + han : han) * 2);
-    addScore("Korean", hangul * 2);
-    // A user message that already contains CJK is a CJK-language message: the
-    // Latin characters inside it (paths, code identifiers, or system log/error
-    // noise co-injected into the same message) must not dilute the user's CJK
-    // intent. Only purely-Latin user messages contribute to English.
-    if (!hasCjk) addScore("English", scriptCount(text, /\p{Script=Latin}/gu));
-    seen += 1;
-  }
-
-  return (Object.keys(scores) as NamingLanguage[])
-    .filter((language) => scores[language] > 0)
-    .sort((left, right) => scores[right] - scores[left] || (firstSeen.get(left) ?? Infinity) - (firstSeen.get(right) ?? Infinity))[0];
-}
-
-function localeLanguageName(locale: string): string {
-  const primary = locale.trim().replace(/_/g, "-").split("-")[0]?.toLowerCase();
-  if (primary === "zh") return "Chinese";
-  if (primary === "ja") return "Japanese";
-  if (primary === "ko") return "Korean";
-  if (primary === "en") return "English";
-  return locale.trim();
-}
-
-/** Builds an explicit language requirement for the naming model. */
-export function getNamingLanguageInstruction(parts: DialoguePart[], fallbackLocale?: string): string {
-  const language = detectDominantUserLanguage(parts);
-  if (language === "Chinese") return "Write the label in Chinese, preserving the Simplified or Traditional script used by the user. This language is determined from user messages only.";
-  if (language) return `Write the label in ${language}. This language is determined from user messages only.`;
-  if (fallbackLocale?.trim()) return `No natural-language user text was detected. Use the language selected in the user's Pi locale: ${localeLanguageName(fallbackLocale)}.`;
-  return "No natural-language user text was detected. Infer the label language from user messages only, never from assistant messages.";
+/** Cleans a single English label without truncating it or using reasoning as a title. */
+export function formatName(value: string, format: NameFormat): string | undefined {
+  const text = value.trim().replace(/^[\"'`“”]+|[\"'`“”]+$/g, "").trim();
+  if (!text || /[\r\n]/.test(text) || /[^\x00-\x7F]/.test(text)) return undefined;
+  if (redactSensitiveText(text).redacted || !isHighQualityName(text)) return undefined;
+  const name = format === "kebab-case"
+    ? text.replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2")
+        .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+    : text.replace(/[^a-zA-Z0-9\s_/.#+-]/g, "").replace(/\s+/g, " ").trim();
+  return isHighQualityName(name) ? name : undefined;
 }
 
 export interface AutonameConfig {
+  /** Format for generated names; manual /name values are left alone. */
+  nameFormat?: NameFormat;
   enabled?: boolean;
   model?: string;
   fallbackModels?: string[];
@@ -128,6 +78,7 @@ export interface AutonameConfig {
 }
 
 export const DEFAULT_CONFIG: Required<AutonameConfig> = {
+  nameFormat: "kebab-case",
   enabled: true,
   model: "",
   fallbackModels: [],
@@ -146,6 +97,7 @@ export function normalizeConfig(input: unknown): AutonameConfig {
       : DEFAULT_CONFIG.cooldownMinutes;
 
   return {
+    nameFormat: raw.nameFormat === "plain" || raw.nameFormat === "kebab-case" ? raw.nameFormat : DEFAULT_CONFIG.nameFormat,
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_CONFIG.enabled,
     model: typeof raw.model === "string" ? raw.model.trim() : DEFAULT_CONFIG.model,
     fallbackModels: Array.isArray(raw.fallbackModels)
@@ -176,7 +128,7 @@ export function redactSensitiveText(text: string): { text: string; redacted: boo
 }
 
 export function isHighQualityName(name: string): boolean {
-  if (name.length < MIN_NAME_LENGTH || name.length > MAX_NAME_LENGTH) return false;
+  if (name.length < MIN_NAME_LENGTH) return false;
   if (RAW_SLICE_RE.test(name)) return false;
   if (SENTENCE_END_RE.test(name)) return false;
   if ((name.match(/[，,。！？!?]/g) || []).length > 1) return false;
@@ -194,7 +146,7 @@ export function blockText(content: any): string {
 }
 
 export function smartFallbackName(text: string): string {
-  let s = text.slice(0, 200).replace(/\n/g, " ").trim();
+  let s = text.replace(/\n/g, " ").trim();
 
   s = s
     .replace(
@@ -204,17 +156,14 @@ export function smartFallbackName(text: string): string {
     .trim();
 
   const sentenceEnd = s.match(/[.!?。！？]/);
-  if (sentenceEnd && sentenceEnd.index! < 60) {
+  if (sentenceEnd) {
     s = s.slice(0, sentenceEnd.index! + 1);
-  } else if (s.length > 45) {
-    const cut = s.lastIndexOf(" ", 45);
-    s = cut > 10 ? s.slice(0, cut) : s.slice(0, 42);
   }
 
   s = s.replace(/(?:吗|呢|吧|啊|呀|哦|嘛|的|了|着|过)[\s,，.。]*$/, "").trim();
   s = s.replace(/[。！？!?.…]+\s*$/, "").trim();
 
-  return s || text.slice(0, 40).replace(/\n/g, " ").trim();
+  return s;
 }
 
 /** A persisted pi-autoname state marker — one of three flavors. */

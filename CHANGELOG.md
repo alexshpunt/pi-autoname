@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- Language detection no longer lets English co-injected into a CJK user message (e.g. system warnings, error logs, or tool output that Pi places inside a user turn) outweigh the user's actual CJK intent. A user message containing any Han/Kana/Hangul is now treated as a CJK-language message; only purely-Latin user messages contribute to the English score. Fixes periodic/`/autoname` titles flipping to English when a recent user turn carried a long English warning (e.g. a `pi-di18n` compaction notice).
+- This fork generates English names, with configurable `kebab-case` (default) or `plain` formatting.
+- Removed the maximum name length, fallback truncation, and the 64-token naming output cap.
+- The naming prompt now asks for a meaningful task label without a character or word limit.
+- Model reasoning, incomplete responses, and non-English-script fallbacks are not used as session names.
 
 ## [0.6.8] - 2026-07-22
 
